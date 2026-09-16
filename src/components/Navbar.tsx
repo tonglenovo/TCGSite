@@ -58,7 +58,7 @@ function Navbar() {
 
       <nav
         className="
-          sticky top-0 z-30 w-full
+          w-full
           border-b border-purple-200
           bg-linear-to-r
           from-purple-200
