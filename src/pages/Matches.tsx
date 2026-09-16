@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+
 import {
   Plus,
 } from 'lucide-react'
@@ -10,7 +11,7 @@ import AddMatchModal from '../components/matches/AddMatchModal'
 import { matches } from '../data/matches'
 
 import type {
-  Game, 
+  Game,
 } from '../types/match'
 
 /* =========================================================
@@ -18,6 +19,11 @@ import type {
 ========================================================= */
 
 function Matches() {
+
+  /* =======================================================
+     STATE
+  ======================================================= */
+
   const [expandedMatch, setExpandedMatch] =
     useState<number | null>(null)
 
@@ -27,13 +33,99 @@ function Matches() {
   const [isAddMatchOpen, setIsAddMatchOpen] =
     useState(false)
 
+  /* =======================================================
+     MATCH REFERENCES
+
+     Stores the HTML element for every match card.
+
+     Example:
+     matchRefs.current[1]
+     matchRefs.current[2]
+     matchRefs.current[3]
+
+     This allows us to automatically scroll to a match
+     after it has been opened.
+  ======================================================= */
+
+  const matchRefs =
+    useRef<Record<number, HTMLDivElement | null>>({})
+
+  /* =======================================================
+     TOGGLE MATCH
+  ======================================================= */
+
   const toggleMatch = (id: number) => {
-    setExpandedMatch((current) =>
-      current === id ? null : id
-    )
+
+    setExpandedMatch((current) => {
+
+      /*
+        Clicking the currently opened match:
+        close it.
+      */
+
+      if (current === id) {
+        return null
+      }
+
+      /*
+        Clicking another match:
+        close the old match and open this one.
+      */
+
+      return id
+    })
   }
 
-  /* Filter matches based on selected game */
+  /* =======================================================
+     AUTO SCROLL TO OPENED MATCH
+  ======================================================= */
+
+  useEffect(() => {
+
+    /*
+      Nothing is expanded,
+      so there is nowhere to scroll.
+    */
+
+    if (expandedMatch === null) {
+      return
+    }
+
+    /*
+      Give React a short moment to:
+
+      1. Close the previous card
+      2. Open the new card
+      3. Recalculate the page layout
+
+      Then scroll to the newly opened card.
+    */
+
+    const timeout = setTimeout(() => {
+
+      const matchElement =
+        matchRefs.current[expandedMatch]
+
+      if (!matchElement) {
+        return
+      }
+
+      matchElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      })
+
+    }, 150)
+
+    return () => {
+      clearTimeout(timeout)
+    }
+
+  }, [expandedMatch])
+
+  /* =======================================================
+     FILTER MATCHES
+  ======================================================= */
 
   const filteredMatches =
     selectedGame === 'All'
@@ -41,6 +133,10 @@ function Matches() {
       : matches.filter(
           (match) => match.game === selectedGame
         )
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <div
@@ -52,11 +148,13 @@ function Matches() {
         from-purple-100
         via-white
         to-blue-100
-        px-4 py-12
+        px-4
+        py-12
         pb-28
         sm:px-6
       "
     >
+
       <div className="mx-auto max-w-6xl">
 
         {/* =================================================
@@ -64,6 +162,7 @@ function Matches() {
         ================================================= */}
 
         <div className="mb-10">
+
           <h1 className="text-4xl font-bold text-gray-900">
             Matches
           </h1>
@@ -72,9 +171,12 @@ function Matches() {
             My TCG match and event records.
           </p>
 
-          {/* Game Tabs */}
+          {/* ===============================================
+              GAME TABS
+          =============================================== */}
 
           <div className="mt-6 flex flex-wrap gap-2">
+
             {(
               [
                 'All',
@@ -83,6 +185,7 @@ function Matches() {
                 'Others',
               ] as const
             ).map((game) => (
+
               <button
                 key={game}
                 type="button"
@@ -92,9 +195,12 @@ function Matches() {
                 }}
                 className={`
                   rounded-full
-                  px-5 py-2
-                  text-sm font-semibold
+                  px-5
+                  py-2
+                  text-sm
+                  font-semibold
                   transition
+
                   ${
                     selectedGame === game
                       ? `
@@ -103,7 +209,8 @@ function Matches() {
                         shadow-sm
                       `
                       : `
-                        border border-gray-200
+                        border
+                        border-gray-200
                         bg-white
                         text-gray-600
                         hover:border-purple-300
@@ -114,7 +221,9 @@ function Matches() {
               >
                 {game}
               </button>
+
             ))}
+
           </div>
         </div>
 
@@ -133,19 +242,25 @@ function Matches() {
 
         <div className="space-y-4">
 
-          {/* Empty State */}
+          {/* ===============================================
+              EMPTY STATE
+          =============================================== */}
 
           {filteredMatches.length === 0 && (
+
             <div
               className="
                 rounded-2xl
-                border border-gray-200
+                border
+                border-gray-200
                 bg-white/70
-                px-6 py-16
+                px-6
+                py-16
                 text-center
                 shadow-sm
               "
             >
+
               <h2 className="text-xl font-bold text-gray-800">
                 No matches yet
               </h2>
@@ -153,21 +268,49 @@ function Matches() {
               <p className="mt-2 text-sm text-gray-500">
                 No {selectedGame} match records have been added yet.
               </p>
+
             </div>
+
           )}
 
-          {/* Match Rows */}
+          {/* ===============================================
+              MATCH ROWS
+          =============================================== */}
 
           {filteredMatches.map((match) => (
-            <MatchCard
+
+            /*
+              This wrapper gives every MatchCard
+              its own reference.
+
+              scroll-mt-24 leaves space above the card
+              so the sticky navbar doesn't cover it.
+            */
+
+            <div
               key={match.matchId}
-              match={match}
-              isExpanded={expandedMatch === match.id}
-              onToggle={() => toggleMatch(match.id)}
-            />
+              ref={(element) => {
+                matchRefs.current[match.id] = element
+              }}
+              className="scroll-mt-24"
+            >
+
+              <MatchCard
+                match={match}
+                isExpanded={
+                  expandedMatch === match.id
+                }
+                onToggle={() =>
+                  toggleMatch(match.id)
+                }
+              />
+
+            </div>
+
           ))}
 
         </div>
+
       </div>
 
       {/* =================================================
@@ -176,12 +319,18 @@ function Matches() {
 
       <button
         type="button"
-        onClick={() => setIsAddMatchOpen(true)}
+        onClick={() =>
+          setIsAddMatchOpen(true)
+        }
         className="
           absolute
-          bottom-6 right-6
-          flex h-14 w-14
-          items-center justify-center
+          bottom-6
+          right-6
+          flex
+          h-14
+          w-14
+          items-center
+          justify-center
           rounded-full
           bg-purple-600
           text-white
@@ -197,13 +346,18 @@ function Matches() {
         <Plus size={28} />
       </button>
 
+      {/* =================================================
+          ADD MATCH MODAL
+      ================================================= */}
+
       <AddMatchModal
         isOpen={isAddMatchOpen}
-        onClose={() => setIsAddMatchOpen(false)}
+        onClose={() =>
+          setIsAddMatchOpen(false)
+        }
       />
 
     </div>
-    
   )
 }
 
