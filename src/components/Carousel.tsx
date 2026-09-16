@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 import slide1 from '../assets/carousel/slide1.jpg'
 import slide2 from '../assets/carousel/slide2.jpg'
 import slide3 from '../assets/carousel/slide3.jpg'
+
+/* =========================================================
+   SLIDES
+========================================================= */
 
 const slides = [
   {
@@ -29,107 +32,184 @@ const slides = [
   },
 ]
 
+/*
+  Carousel structure:
+
+  Index 0 = REAL Slide 1
+  Index 1 = REAL Slide 2
+  Index 2 = REAL Slide 3
+  Index 3 = CLONE Slide 1
+
+  Animation:
+
+  REAL 1
+     ↓
+  REAL 2
+     ↓
+  REAL 3
+     ↓
+  CLONE 1
+     ↓
+  secretly reset to REAL 1
+*/
+
 const extendedSlides = [
-  slides[slides.length - 1], // clone of slide 3
   ...slides,
-  slides[0], // clone of slide 1
+  slides[0],
 ]
 
+/* =========================================================
+   CAROUSEL COMPONENT
+========================================================= */
+
 function Carousel() {
-  // Start at 1 because index 0 is the cloned slide 3
-  const [currentSlide, setCurrentSlide] = useState(1)
+  const [currentSlide, setCurrentSlide] = useState(0)
   const [transitionEnabled, setTransitionEnabled] = useState(true)
 
-  const nextSlide = () => {
-    setTransitionEnabled(true)
-    setCurrentSlide((current) => current + 1)
-  }
+  /* =======================================================
+     AUTO SLIDE
+  ======================================================= */
 
-  const previousSlide = () => {
-    setTransitionEnabled(true)
-    setCurrentSlide((current) => current - 1)
-  }
-
-  // Auto slide every 5 seconds
   useEffect(() => {
-    const interval = setInterval(() => {
-      nextSlide()
+    const timeout = setTimeout(() => {
+      setTransitionEnabled(true)
+
+      setCurrentSlide((current) => {
+        /*
+          Safety check.
+
+          Normally this should never go above slides.length,
+          but this prevents the carousel from moving into
+          empty space if something unexpected happens.
+        */
+
+        if (current >= slides.length) {
+          return 0
+        }
+
+        return current + 1
+      })
     }, 5000)
 
-    return () => clearInterval(interval)
-  }, [])
+    return () => clearTimeout(timeout)
+  }, [currentSlide])
 
-  // Secret reset when reaching a cloned slide
+  /* =======================================================
+     INFINITE LOOP RESET
+  ======================================================= */
+
   const handleTransitionEnd = () => {
-    // Reached cloned slide 1 on the right
-    if (currentSlide === slides.length + 1) {
-      setTransitionEnabled(false)
-      setCurrentSlide(1)
-    }
+    /*
+      When currentSlide reaches 3:
 
-    // Reached cloned slide 3 on the left
-    if (currentSlide === 0) {
+      REAL 3
+        ↓
+      CLONE 1
+
+      Once the animation finishes,
+      disable animation and secretly
+      jump back to REAL 1.
+    */
+
+    if (currentSlide === slides.length) {
       setTransitionEnabled(false)
-      setCurrentSlide(slides.length)
+      setCurrentSlide(0)
     }
   }
 
-  // Convert extended index to actual slide index
+  /* =======================================================
+     ACTIVE INDICATOR
+  ======================================================= */
+
   const activeSlide =
-    currentSlide === 0
-      ? slides.length - 1
-      : currentSlide === slides.length + 1
-        ? 0
-        : currentSlide - 1
+    currentSlide === slides.length
+      ? 0
+      : currentSlide
+
+  /* =======================================================
+     RENDER
+  ======================================================= */
 
   return (
     <div className="w-full max-w-6xl">
 
-      {/* Carousel */}
-      <div className="relative overflow-hidden rounded-2xl bg-gray-100 shadow-lg">
+      {/* =================================================
+          CAROUSEL
+      ================================================= */}
 
-        {/* Slides */}
+      <div
+        className="
+          relative
+          overflow-hidden
+          rounded-2xl
+          bg-gray-100
+          shadow-lg
+        "
+      >
+
+        {/* ===============================================
+            SLIDE TRACK
+        =============================================== */}
+
         <div
           onTransitionEnd={handleTransitionEnd}
-          className={`flex ${
-            transitionEnabled
-              ? 'transition-transform duration-700 ease-in-out'
-              : ''
-          }`}
+          className={`
+            flex
+            ${
+              transitionEnabled
+                ? 'transition-transform duration-700 ease-in-out'
+                : ''
+            }
+          `}
           style={{
-            transform: `translateX(-${
-              currentSlide * (100 / extendedSlides.length)
-            }%)`,
-            width: `${extendedSlides.length * 100}%`,
+            transform: `translateX(-${currentSlide * 100}%)`,
           }}
         >
+
+          {/* =============================================
+              SLIDES
+          ============================================= */}
+
           {extendedSlides.map((slide, index) => (
             <div
               key={index}
               className="
                 relative
-                aspect-[4/3]
+                w-full
                 shrink-0
+                aspect-[4/3]
                 sm:aspect-video
                 lg:aspect-[16/7]
               "
-              style={{
-                width: `${100 / extendedSlides.length}%`,
-              }}
             >
-              {/* Image */}
+
+              {/* =========================================
+                  IMAGE
+              ========================================= */}
+
               <img
                 src={slide.image}
                 alt={slide.alt}
                 draggable={false}
-                onContextMenu={(event) => event.preventDefault()}
-                className="h-full w-full select-none object-cover"
+                onContextMenu={(event) => {
+                  event.preventDefault()
+                }}
+                className="
+                  h-full
+                  w-full
+                  select-none
+                  object-cover
+                "
               />
 
-              {/* Dark Gradient Overlay */}
+              {/* =========================================
+                  DARK GRADIENT OVERLAY
+              ========================================= */}
+
               <div
                 className="
-                  absolute inset-0
+                  absolute
+                  inset-0
                   bg-linear-to-t
                   from-black/75
                   via-black/10
@@ -137,21 +217,30 @@ function Carousel() {
                 "
               />
 
-              {/* Text */}
+              {/* =========================================
+                  TEXT CONTENT
+              ========================================= */}
+
               <div
                 className="
-                  absolute bottom-0 left-0
+                  absolute
+                  bottom-0
+                  left-0
                   max-w-2xl
-                  p-6 text-white
+                  p-6
+                  text-white
                   sm:p-8
                   lg:p-10
                 "
               >
+
                 {/* Label */}
+
                 <p
                   className="
                     mb-2
-                    text-xs font-bold
+                    text-xs
+                    font-bold
                     tracking-[0.25em]
                     text-purple-300
                     sm:text-sm
@@ -161,9 +250,11 @@ function Carousel() {
                 </p>
 
                 {/* Title */}
+
                 <h2
                   className="
-                    text-2xl font-bold
+                    text-2xl
+                    font-bold
                     sm:text-3xl
                     lg:text-4xl
                   "
@@ -172,83 +263,50 @@ function Carousel() {
                 </h2>
 
                 {/* Subtitle */}
+
                 <p
                   className="
                     mt-2
                     max-w-xl
-                    text-sm text-gray-200
+                    text-sm
+                    text-gray-200
                     sm:text-base
                     lg:text-lg
                   "
                 >
                   {slide.subtitle}
                 </p>
-              </div>
 
+              </div>
             </div>
           ))}
+
         </div>
-
-        {/* Previous Button */}
-        <button
-          type="button"
-          onClick={previousSlide}
-          className="
-            absolute left-4 top-1/2
-            flex h-11 w-11 -translate-y-1/2
-            items-center justify-center
-            rounded-full
-            bg-black/40 text-white
-            transition
-            hover:bg-black/60
-          "
-          aria-label="Previous slide"
-        >
-          <ChevronLeft size={26} />
-        </button>
-
-        {/* Next Button */}
-        <button
-          type="button"
-          onClick={nextSlide}
-          className="
-            absolute right-4 top-1/2
-            flex h-11 w-11 -translate-y-1/2
-            items-center justify-center
-            rounded-full
-            bg-black/40 text-white
-            transition
-            hover:bg-black/60
-          "
-          aria-label="Next slide"
-        >
-          <ChevronRight size={26} />
-        </button>
-
       </div>
 
-      {/* Indicators */}
+      {/* =================================================
+          INDICATORS
+      ================================================= */}
+
       <div className="mt-5 flex justify-center gap-2">
+
         {slides.map((_, index) => (
-          <button
+          <span
             key={index}
-            type="button"
-            onClick={() => {
-              setTransitionEnabled(true)
-              setCurrentSlide(index + 1)
-            }}
             className={`
-              h-2.5 rounded-full
-              transition-all duration-300
+              h-2.5
+              rounded-full
+              transition-all
+              duration-300
               ${
                 activeSlide === index
                   ? 'w-8 bg-purple-600'
-                  : 'w-2.5 bg-gray-300 hover:bg-gray-400'
+                  : 'w-2.5 bg-gray-300'
               }
             `}
-            aria-label={`Go to slide ${index + 1}`}
           />
         ))}
+
       </div>
 
     </div>
