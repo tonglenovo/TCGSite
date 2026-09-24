@@ -8,10 +8,11 @@ import MatchStatistics from '../components/matches/MatchStatistics'
 import MatchCard from '../components/matches/MatchCard'
 import AddMatchModal from '../components/matches/AddMatchModal'
 
-import { matches } from '../data/matches'
+// import { matches } from '../data/matches'
 
 import type {
   Game,
+  MatchEvent,
 } from '../types/match'
 
 /* =========================================================
@@ -24,6 +25,13 @@ function Matches() {
      STATE
   ======================================================= */
 
+  const [matches, setMatches] =
+    useState<MatchEvent[]>([])
+  const [isLoading, setIsLoading] =
+    useState(true)
+  const [error, setError] =
+    useState<string | null>(null)
+
   const [expandedMatch, setExpandedMatch] =
     useState<number | null>(null)
 
@@ -32,6 +40,35 @@ function Matches() {
 
   const [isAddMatchOpen, setIsAddMatchOpen] =
     useState(false)
+
+  useEffect(() => {
+    const fetchMatches = async () => {
+      try {
+        setIsLoading(true)
+        setError(null)
+
+        const response = await fetch(
+          'http://localhost:3000/api/matches'
+        )
+
+        if (!response.ok) {
+          throw new Error('Failed to fetch matches')
+        }
+
+        const data: MatchEvent[] = await response.json()
+
+        setMatches(data)
+      } catch (error) {
+        console.error('Error fetching matches:', error)
+
+        setError('Unable to load matches.')
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchMatches()
+  }, [])
 
   /* =======================================================
      MATCH REFERENCES
@@ -131,8 +168,8 @@ function Matches() {
     selectedGame === 'All'
       ? matches
       : matches.filter(
-          (match) => match.game === selectedGame
-        )
+        (match) => match.game === selectedGame
+      )
 
   /* =======================================================
      RENDER
@@ -201,14 +238,13 @@ function Matches() {
                   font-semibold
                   transition
 
-                  ${
-                    selectedGame === game
-                      ? `
+                  ${selectedGame === game
+                    ? `
                         bg-purple-600
                         text-white
                         shadow-sm
                       `
-                      : `
+                    : `
                         border
                         border-gray-200
                         bg-white
@@ -242,14 +278,58 @@ function Matches() {
 
         <div className="space-y-4">
 
+          {/* Loading State */}
+
+          {isLoading && (
+            <div
+              className="
+                rounded-2xl
+                border border-gray-200
+                bg-white/70
+                px-6 py-16
+                text-center
+                shadow-sm
+              "
+            >
+              <p className="font-semibold text-gray-700">
+                Loading matches...
+              </p>
+            </div>
+          )}
+
+          {/* Error State */}
+
+          {error && !isLoading && (
+            <div
+              className="
+                rounded-2xl
+                border border-red-200
+                bg-red-50
+                px-6 py-16
+                text-center
+                shadow-sm
+              "
+            >
+              <h2 className="text-xl font-bold text-red-700">
+                Unable to load matches
+              </h2>
+
+              <p className="mt-2 text-sm text-red-500">
+                {error}
+              </p>
+            </div>
+          )}
+
           {/* ===============================================
               EMPTY STATE
           =============================================== */}
 
-          {filteredMatches.length === 0 && (
+          {!isLoading &&
+            !error &&
+            filteredMatches.length === 0 && (
 
-            <div
-              className="
+              <div
+                className="
                 rounded-2xl
                 border
                 border-gray-200
@@ -259,55 +339,57 @@ function Matches() {
                 text-center
                 shadow-sm
               "
-            >
+              >
 
-              <h2 className="text-xl font-bold text-gray-800">
-                No matches yet
-              </h2>
+                <h2 className="text-xl font-bold text-gray-800">
+                  No matches yet
+                </h2>
 
-              <p className="mt-2 text-sm text-gray-500">
-                No {selectedGame} match records have been added yet.
-              </p>
+                <p className="mt-2 text-sm text-gray-500">
+                  No {selectedGame} match records have been added yet.
+                </p>
 
-            </div>
+              </div>
 
-          )}
+            )}
 
           {/* ===============================================
               MATCH ROWS
           =============================================== */}
 
-          {filteredMatches.map((match) => (
+          {!isLoading &&
+            !error &&
+            filteredMatches.map((match) => (
 
-            /*
-              This wrapper gives every MatchCard
-              its own reference.
+              /*
+                This wrapper gives every MatchCard
+                its own reference.
+  
+                scroll-mt-24 leaves space above the card
+                so the sticky navbar doesn't cover it.
+              */
 
-              scroll-mt-24 leaves space above the card
-              so the sticky navbar doesn't cover it.
-            */
+              <div
+                key={match.matchId}
+                ref={(element) => {
+                  matchRefs.current[match.id] = element
+                }}
+                className="scroll-mt-24"
+              >
 
-            <div
-              key={match.matchId}
-              ref={(element) => {
-                matchRefs.current[match.id] = element
-              }}
-              className="scroll-mt-24"
-            >
+                <MatchCard
+                  match={match}
+                  isExpanded={
+                    expandedMatch === match.id
+                  }
+                  onToggle={() =>
+                    toggleMatch(match.id)
+                  }
+                />
 
-              <MatchCard
-                match={match}
-                isExpanded={
-                  expandedMatch === match.id
-                }
-                onToggle={() =>
-                  toggleMatch(match.id)
-                }
-              />
+              </div>
 
-            </div>
-
-          ))}
+            ))}
 
         </div>
 
@@ -323,9 +405,9 @@ function Matches() {
           setIsAddMatchOpen(true)
         }
         className="
-          absolute
-          bottom-6
-          right-6
+          fixed
+          bottom-4
+          right-4
           flex
           h-14
           w-14
