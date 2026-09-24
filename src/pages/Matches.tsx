@@ -29,8 +29,10 @@ function Matches() {
 
   const [matches, setMatches] =
     useState<MatchEvent[]>([])
+
   const [isLoading, setIsLoading] =
     useState(true)
+
   const [error, setError] =
     useState<string | null>(null)
 
@@ -43,30 +45,58 @@ function Matches() {
   const [isAddMatchOpen, setIsAddMatchOpen] =
     useState(false)
 
-  useEffect(() => {
-    const fetchMatches = async () => {
-      try {
-        setIsLoading(true)
-        setError(null)
+  const [matchToEdit, setMatchToEdit] =
+    useState<MatchEvent | null>(null)
 
-        const response = await fetch(`${API_URL}/api/matches`)
+  /* =======================================================
+     FETCH MATCHES
+  ======================================================= */
 
-        if (!response.ok) {
-          throw new Error('Failed to fetch matches')
-        }
+  const fetchMatches = async () => {
+    try {
 
-        const data: MatchEvent[] = await response.json()
+      setError(null)
 
-        setMatches(data)
-      } catch (error) {
-        console.error('Error fetching matches:', error)
+      const response = await fetch(
+        `${API_URL}/api/matches`
+      )
 
-        setError('Unable to load matches.')
-      } finally {
-        setIsLoading(false)
+      if (!response.ok) {
+        throw new Error(
+          'Failed to fetch matches'
+        )
       }
-    }
 
+      const data =
+        await response.json()
+
+      setMatches(data)
+
+    } catch (error) {
+
+      console.error(
+        'Failed to fetch matches:',
+        error
+      )
+
+      setError(
+        error instanceof Error
+          ? error.message
+          : 'Failed to fetch matches'
+      )
+
+    } finally {
+
+      setIsLoading(false)
+
+    }
+  }
+
+  /* =======================================================
+     INITIAL LOAD
+  ======================================================= */
+
+  useEffect(() => {
     fetchMatches()
   }, [])
 
@@ -385,6 +415,10 @@ function Matches() {
                   onToggle={() =>
                     toggleMatch(match.id)
                   }
+                  onEdit={() => {
+                    setMatchToEdit(match)
+                    setIsAddMatchOpen(true)
+                  }}
                 />
 
               </div>
@@ -401,9 +435,10 @@ function Matches() {
 
       <button
         type="button"
-        onClick={() =>
+        onClick={() => {
+          setMatchToEdit(null)
           setIsAddMatchOpen(true)
-        }
+        }}
         className="
           fixed
           bottom-4
@@ -434,8 +469,18 @@ function Matches() {
 
       <AddMatchModal
         isOpen={isAddMatchOpen}
-        onClose={() =>
+
+        matchToEdit={
+          matchToEdit
+        }
+
+        onClose={() => {
           setIsAddMatchOpen(false)
+          setMatchToEdit(null)
+        }}
+
+        onMatchAdded={
+          fetchMatches
         }
       />
 

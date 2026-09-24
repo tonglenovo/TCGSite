@@ -43,6 +43,9 @@ export interface MatchEvent {
   // Store dates as YYYY-MM-DD
   date: string
 
+  time?: string
+  playedAt: string
+
   location: string
   eventType: EventType
 

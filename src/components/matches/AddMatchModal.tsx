@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+
 import {
   ImagePlus,
   Plus,
@@ -9,6 +10,7 @@ import {
 import type {
   DeckColor,
   Game,
+  MatchEvent,
 } from '../../types/match'
 
 import {
@@ -19,6 +21,8 @@ import type {
   EventType,
 } from '../../data/eventTypes'
 
+import { API_URL } from '../../config/api'
+
 /* =========================================================
    PROPS
 ========================================================= */
@@ -26,6 +30,8 @@ import type {
 interface AddMatchModalProps {
   isOpen: boolean
   onClose: () => void
+  onMatchAdded: () => Promise<void>
+  matchToEdit?: MatchEvent | null
 }
 
 /* =========================================================
@@ -49,32 +55,33 @@ const deckColorOptions: {
   label: string
   circleClass: string
 }[] = [
-  {
-    value: 'blue',
-    label: 'Blue',
-    circleClass: 'bg-blue-500',
-  },
-  {
-    value: 'green',
-    label: 'Green',
-    circleClass: 'bg-green-500',
-  },
-  {
-    value: 'red',
-    label: 'Red',
-    circleClass: 'bg-red-500',
-  },
-  {
-    value: 'purple',
-    label: 'Purple',
-    circleClass: 'bg-purple-500',
-  },
-  {
-    value: 'white',
-    label: 'White',
-    circleClass: 'border border-gray-400 bg-white',
-  },
-]
+    {
+      value: 'blue',
+      label: 'Blue',
+      circleClass: 'bg-blue-500',
+    },
+    {
+      value: 'green',
+      label: 'Green',
+      circleClass: 'bg-green-500',
+    },
+    {
+      value: 'red',
+      label: 'Red',
+      circleClass: 'bg-red-500',
+    },
+    {
+      value: 'purple',
+      label: 'Purple',
+      circleClass: 'bg-purple-500',
+    },
+    {
+      value: 'white',
+      label: 'White',
+      circleClass:
+        'border border-gray-400 bg-white',
+    },
+  ]
 
 /* =========================================================
    COMPONENT
@@ -83,7 +90,22 @@ const deckColorOptions: {
 function AddMatchModal({
   isOpen,
   onClose,
+  onMatchAdded,
+  matchToEdit = null,
 }: AddMatchModalProps) {
+
+  const isEditing =
+    matchToEdit !== null
+
+  /* =======================================================
+     SUBMIT STATE
+  ======================================================= */
+
+  const [isSubmitting, setIsSubmitting] =
+    useState(false)
+
+  const [submitError, setSubmitError] =
+    useState('')
 
   /* =======================================================
      EVENT INFORMATION
@@ -93,6 +115,9 @@ function AddMatchModal({
     useState<Game>('Gundam')
 
   const [date, setDate] =
+    useState('')
+
+  const [time, setTime] =
     useState('')
 
   const [location, setLocation] =
@@ -159,6 +184,97 @@ function AddMatchModal({
         deckColors: [],
       },
     ])
+
+  /* =======================================================
+ LOAD MATCH WHEN EDITING
+======================================================= */
+
+  useEffect(() => {
+    if (!isOpen) {
+      return
+    }
+
+    if (!matchToEdit) {
+      return
+    }
+
+    setGame(matchToEdit.game)
+
+    setDate(
+      matchToEdit.date ??
+      matchToEdit.playedAt.slice(0, 10)
+    )
+
+    // Convert MongoDB UTC time back to Singapore time.
+    const playedDate =
+      new Date(matchToEdit.playedAt)
+
+    const singaporeTime =
+      playedDate.toLocaleTimeString(
+        'en-GB',
+        {
+          timeZone: 'Asia/Singapore',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        }
+      )
+
+    setTime(singaporeTime)
+
+    setLocation(
+      matchToEdit.location
+    )
+
+    setEventType(
+      matchToEdit.eventType as EventType
+    )
+
+    setScore(
+      matchToEdit.score
+    )
+
+    setDeckName(
+      matchToEdit.deckName
+    )
+
+    setDeckColors(
+      [...matchToEdit.deckColors]
+    )
+
+    setAchievement(
+      matchToEdit.achievement ?? null
+    )
+
+    setRounds(
+      matchToEdit.rounds.map(
+        (round, index) => ({
+          id:
+            round.id ??
+            index + 1,
+
+          opponent:
+            round.opponent,
+
+          score:
+            round.score,
+
+          deckName:
+            round.deckName,
+
+          deckColors:
+            [...round.deckColors],
+        })
+      )
+    )
+
+    setSubmitError('')
+
+  }, [
+    isOpen,
+    matchToEdit,
+  ])
+
 
   /* =======================================================
      DECK IMAGE PREVIEW
@@ -247,9 +363,11 @@ function AddMatchModal({
         ) {
           return {
             ...round,
+
             deckColors:
               round.deckColors.filter(
-                (item) => item !== color
+                (item) =>
+                  item !== color
               ),
           }
         }
@@ -263,6 +381,7 @@ function AddMatchModal({
 
         return {
           ...round,
+
           deckColors: [
             ...round.deckColors,
             color,
@@ -277,14 +396,15 @@ function AddMatchModal({
   ======================================================= */
 
   const addRound = () => {
+
     const nextId =
       rounds.length === 0
         ? 1
         : Math.max(
-            ...rounds.map(
-              (round) => round.id
-            )
-          ) + 1
+          ...rounds.map(
+            (round) => round.id
+          )
+        ) + 1
 
     setRounds((current) => [
       ...current,
@@ -346,6 +466,7 @@ function AddMatchModal({
 
   const isFormValid =
     date.trim() !== '' &&
+    time.trim() !== '' &&
     location.trim() !== '' &&
     eventType.trim() !== '' &&
     score.trim() !== '' &&
@@ -359,29 +480,91 @@ function AddMatchModal({
     )
 
   /* =======================================================
-     SUBMIT
-  ======================================================= */
+   RESET FORM
+======================================================= */
 
-  const handleSubmit = (
-    event: React.FormEvent<HTMLFormElement>
-  ) => {
-    event.preventDefault()
+  const resetForm = () => {
+    // Event information
+    setGame('Gundam')
+    setDate('')
+    setTime('')
+    setLocation('')
+    setEventType('Shop Battle')
 
-    if (!isFormValid) {
+    // Match result
+    setScore('')
+    setDeckName('')
+    setDeckColors([])
+
+    // Achievement
+    setAchievement(null)
+
+    // Images
+    setDeckImage(null)
+    setRewardImage(null)
+    setDeckImagePreview(null)
+    setRewardImagePreview(null)
+
+    // Rounds
+    setRounds([
+      {
+        id: 1,
+        opponent: '',
+        score: '',
+        deckName: '',
+        deckColors: [],
+      },
+    ])
+
+    // Error
+    setSubmitError('')
+  }
+
+
+  const handleClose = () => {
+    if (isSubmitting) {
       return
     }
 
-    /*
-      Your rule:
+    resetForm()
+    onClose()
+  }
 
-      x-0 = WIN
-      anything else = LOSS
-    */
+  /* =======================================================
+     SUBMIT
+  ======================================================= */
+
+
+  const handleSubmit = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
+
+    event.preventDefault()
+
+    if (
+      !isFormValid ||
+      isSubmitting
+    ) {
+      return
+    }
+
+    /* =====================================================
+       RESULT RULE
+  
+       x-0 = WIN
+       anything else = LOSS
+    ===================================================== */
 
     const result =
-      score.trim().endsWith('-0')
+      score
+        .trim()
+        .endsWith('-0')
         ? 'win'
         : 'loss'
+
+    /* =====================================================
+       COMPLETE ROUND DATA
+    ===================================================== */
 
     const completedRounds =
       rounds.map((round) => ({
@@ -395,9 +578,26 @@ function AddMatchModal({
             : 'loss',
       }))
 
-    const newMatch = {
+    /* =====================================================
+       PLAYED AT
+  
+       Singapore UTC+8
+    ===================================================== */
+
+    const playedAt =
+      `${date}T${time}:00+08:00`
+
+    /* =====================================================
+       MATCH DATA
+    ===================================================== */
+
+    const matchData = {
       game,
+
       date,
+      time,
+      playedAt,
+
       location,
       eventType,
 
@@ -409,28 +609,119 @@ function AddMatchModal({
 
       achievement,
 
-      deckImage,
-      rewardImage,
-
-      rounds: completedRounds,
+      rounds:
+        completedRounds,
     }
 
-    console.log(
-      'New Match:',
-      newMatch
-    )
+    /* =====================================================
+       ADD OR EDIT
+    ===================================================== */
 
-    /*
-      Later we will replace this with:
+    const requestUrl =
+      isEditing
+        ? `${API_URL}/api/matches/${matchToEdit.id}`
+        : `${API_URL}/api/matches`
 
-      FormData
-          ↓
-      Express
-          ↓
-      MongoDB
-    */
+    const requestMethod =
+      isEditing
+        ? 'PATCH'
+        : 'POST'
 
-    onClose()
+    try {
+
+      setIsSubmitting(true)
+      setSubmitError('')
+
+      const response =
+        await fetch(
+          requestUrl,
+          {
+            method:
+              requestMethod,
+
+            headers: {
+              'Content-Type':
+                'application/json',
+            },
+
+            body:
+              JSON.stringify(
+                matchData
+              ),
+          }
+        )
+
+      const data =
+        await response.json()
+
+      if (!response.ok) {
+        throw new Error(
+          data.message ||
+          (
+            isEditing
+              ? 'Failed to update match'
+              : 'Failed to add match'
+          )
+        )
+      }
+
+      if (isEditing) {
+
+        console.log(
+          'Match updated in MongoDB:',
+          data
+        )
+
+      } else {
+
+        console.log(
+          'Match saved to MongoDB:',
+          data
+        )
+
+      }
+
+      // Get latest MongoDB data.
+      await onMatchAdded()
+
+      // Clear old form.
+      resetForm()
+
+      // Close modal.
+      onClose()
+
+    } catch (error) {
+
+      console.error(
+        isEditing
+          ? 'Failed to update match:'
+          : 'Failed to add match:',
+        error
+      )
+
+      if (
+        error instanceof Error
+      ) {
+
+        setSubmitError(
+          error.message
+        )
+
+      } else {
+
+        setSubmitError(
+          isEditing
+            ? 'Failed to update match'
+            : 'Failed to add match'
+        )
+
+      }
+
+    } finally {
+
+      setIsSubmitting(false)
+
+    }
   }
 
   /* =======================================================
@@ -484,19 +775,36 @@ function AddMatchModal({
 
           <div>
 
-            <h2 className="text-2xl font-bold text-gray-900">
-              Add Match
+            <h2
+              className="
+              text-2xl
+              font-bold
+              text-gray-900
+            "
+            >
+              {isEditing
+                ? 'Edit Match'
+                : 'Add Match'}
             </h2>
 
-            <p className="mt-1 text-sm text-gray-500">
-              Add a new TCG match record.
+            <p
+              className="
+              mt-1
+              text-sm
+              text-gray-500
+            "
+            >
+              {isEditing
+                ? 'Update this TCG match record.'
+                : 'Add a new TCG match record.'}
             </p>
 
           </div>
 
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
+            disabled={isSubmitting}
             className="
               flex h-10 w-10
               items-center justify-center
@@ -505,8 +813,14 @@ function AddMatchModal({
               transition
               hover:bg-gray-100
               hover:text-gray-900
+              disabled:cursor-not-allowed
+              disabled:opacity-50
             "
-            aria-label="Close add match"
+            aria-label={
+              isEditing
+                ? 'Close edit match'
+                : 'Close add match'
+            }
           >
             <X size={22} />
           </button>
@@ -517,7 +831,12 @@ function AddMatchModal({
             SCROLLABLE BODY
         ================================================= */}
 
-        <div className="overflow-y-auto px-6 py-6">
+        <div
+          className="
+            overflow-y-auto
+            px-6 py-6
+          "
+        >
 
           <div className="space-y-8">
 
@@ -527,11 +846,24 @@ function AddMatchModal({
 
             <section>
 
-              <h3 className="mb-4 text-lg font-bold text-gray-900">
+              <h3
+                className="
+                  mb-4
+                  text-lg
+                  font-bold
+                  text-gray-900
+                "
+              >
                 Event Information
               </h3>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div
+                className="
+                  grid
+                  gap-4
+                  md:grid-cols-2
+                "
+              >
 
                 {/* Game */}
 
@@ -539,24 +871,14 @@ function AddMatchModal({
 
                   <select
                     value={game}
-                    onChange={(event) =>
-                      setGame(
-                        event.target.value as Game
-                      )
-                    }
+                    onChange={(event) => {
+                      setGame(event.target.value as Game)
+                    }}
                     className={inputClass}
                   >
-                    <option value="Gundam">
-                      Gundam
-                    </option>
-
-                    <option value="Riftbound">
-                      Riftbound
-                    </option>
-
-                    <option value="Others">
-                      Others
-                    </option>
+                    <option value="Gundam">Gundam</option>
+                    <option value="Riftbound">Riftbound</option>
+                    <option value="Others">Others</option>
                   </select>
 
                 </FormField>
@@ -570,6 +892,23 @@ function AddMatchModal({
                     value={date}
                     onChange={(event) =>
                       setDate(
+                        event.target.value
+                      )
+                    }
+                    className={inputClass}
+                  />
+
+                </FormField>
+
+                {/* Time */}
+
+                <FormField label="Time">
+
+                  <input
+                    type="time"
+                    value={time}
+                    onChange={(event) =>
+                      setTime(
                         event.target.value
                       )
                     }
@@ -603,20 +942,22 @@ function AddMatchModal({
                   <select
                     value={eventType}
                     onChange={(event) =>
-                      setEventType(
-                        event.target.value as EventType
-                      )
+                      setEventType(event.target.value as EventType)
                     }
                     className={inputClass}
                   >
-                    {eventTypes.map((type) => (
-                      <option
-                        key={type}
-                        value={type}
-                      >
-                        {type}
-                      </option>
-                    ))}
+
+                    {eventTypes.map(
+                      (type) => (
+                        <option
+                          key={type}
+                          value={type}
+                        >
+                          {type}
+                        </option>
+                      )
+                    )}
+
                   </select>
 
                 </FormField>
@@ -631,11 +972,24 @@ function AddMatchModal({
 
             <section>
 
-              <h3 className="mb-4 text-lg font-bold text-gray-900">
+              <h3
+                className="
+                  mb-4
+                  text-lg
+                  font-bold
+                  text-gray-900
+                "
+              >
                 Match Result
               </h3>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div
+                className="
+                  grid
+                  gap-4
+                  md:grid-cols-2
+                "
+              >
 
                 {/* Score */}
 
@@ -653,8 +1007,16 @@ function AddMatchModal({
                     className={inputClass}
                   />
 
-                  <p className="mt-1 text-xs text-gray-400">
-                    A score ending in -0 is automatically considered a win.
+                  <p
+                    className="
+                      mt-1
+                      text-xs
+                      text-gray-400
+                    "
+                  >
+                    A score ending in -0 is
+                    automatically considered
+                    a win.
                   </p>
 
                 </FormField>
@@ -683,17 +1045,35 @@ function AddMatchModal({
 
               <div className="mt-4">
 
-                <p className="mb-2 text-sm font-semibold text-gray-700">
+                <p
+                  className="
+                    mb-2
+                    text-sm
+                    font-semibold
+                    text-gray-700
+                  "
+                >
                   Deck Colours
                 </p>
 
                 <ColorSelector
-                  selectedColors={deckColors}
-                  onToggle={toggleDeckColor}
+                  selectedColors={
+                    deckColors
+                  }
+                  onToggle={
+                    toggleDeckColor
+                  }
                 />
 
-                <p className="mt-2 text-xs text-gray-400">
-                  Select 1 colour for mono or up to 2 colours.
+                <p
+                  className="
+                    mt-2
+                    text-xs
+                    text-gray-400
+                  "
+                >
+                  Select 1 colour for mono
+                  or up to 2 colours.
                 </p>
 
               </div>
@@ -706,16 +1086,29 @@ function AddMatchModal({
 
             <section>
 
-              <h3 className="mb-4 text-lg font-bold text-gray-900">
+              <h3
+                className="
+                  mb-4
+                  text-lg
+                  font-bold
+                  text-gray-900
+                "
+              >
                 Achievement
               </h3>
 
-              <div className="flex flex-wrap gap-2">
-
-                {/* None */}
+              <div
+                className="
+                  flex
+                  flex-wrap
+                  gap-2
+                "
+              >
 
                 <AchievementButton
-                  active={achievement === null}
+                  active={
+                    achievement === null
+                  }
                   onClick={() => {
                     setAchievement(null)
                     setRewardImage(null)
@@ -724,20 +1117,19 @@ function AddMatchModal({
                   None
                 </AchievementButton>
 
-                {/* Winner */}
-
                 <AchievementButton
                   active={
-                    achievement === 'winner'
+                    achievement ===
+                    'winner'
                   }
                   onClick={() =>
-                    setAchievement('winner')
+                    setAchievement(
+                      'winner'
+                    )
                   }
                 >
                   🏆 Winner
                 </AchievementButton>
-
-                {/* Lucky Draw */}
 
                 <AchievementButton
                   active={
@@ -763,7 +1155,14 @@ function AddMatchModal({
 
             <section>
 
-              <h3 className="mb-4 text-lg font-bold text-gray-900">
+              <h3
+                className="
+                  mb-4
+                  text-lg
+                  font-bold
+                  text-gray-900
+                "
+              >
                 Images
               </h3>
 
@@ -771,38 +1170,43 @@ function AddMatchModal({
                 className={`
                   grid
                   gap-4
-                  ${
-                    achievement !== null
-                      ? 'md:grid-cols-2'
-                      : 'grid-cols-1'
+                  ${achievement !== null
+                    ? 'md:grid-cols-2'
+                    : 'grid-cols-1'
                   }
                 `}
               >
 
-                {/* Deck Image */}
-
                 <ImageUpload
                   label="Deck Image"
                   image={deckImage}
-                  preview={deckImagePreview}
-                  onChange={setDeckImage}
+                  preview={
+                    deckImagePreview
+                  }
+                  onChange={
+                    setDeckImage
+                  }
                   onRemove={() =>
                     setDeckImage(null)
                   }
                 />
 
-                {/* Reward Image */}
-
                 {achievement !== null && (
+
                   <ImageUpload
                     label="Reward Image"
                     image={rewardImage}
-                    preview={rewardImagePreview}
-                    onChange={setRewardImage}
+                    preview={
+                      rewardImagePreview
+                    }
+                    onChange={
+                      setRewardImage
+                    }
                     onRemove={() =>
                       setRewardImage(null)
                     }
                   />
+
                 )}
 
               </div>
@@ -815,23 +1219,32 @@ function AddMatchModal({
 
             <section>
 
-              {/* Round Header */}
-
               <div className="mb-4">
 
-                <h3 className="text-lg font-bold text-gray-900">
+                <h3
+                  className="
+                    text-lg
+                    font-bold
+                    text-gray-900
+                  "
+                >
                   Rounds
                 </h3>
 
-                <p className="mt-1 text-sm text-gray-500">
-                  Add each opponent you played.
+                <p
+                  className="
+                    mt-1
+                    text-sm
+                    text-gray-500
+                  "
+                >
+                  Add each opponent you
+                  played.
                 </p>
 
               </div>
 
-              {/* ===========================================
-                  ROUND CARDS
-              =========================================== */}
+              {/* Round Cards */}
 
               <div className="space-y-4">
 
@@ -849,7 +1262,7 @@ function AddMatchModal({
                       "
                     >
 
-                      {/* Round Number */}
+                      {/* Round Header */}
 
                       <div
                         className="
@@ -860,11 +1273,14 @@ function AddMatchModal({
                         "
                       >
 
-                        <p className="font-bold text-gray-900">
+                        <p
+                          className="
+                            font-bold
+                            text-gray-900
+                          "
+                        >
                           Round {index + 1}
                         </p>
-
-                        {/* Delete Round */}
 
                         {rounds.length > 1 && (
 
@@ -885,11 +1301,14 @@ function AddMatchModal({
                               transition
                               hover:bg-red-50
                             "
-                            aria-label={`Remove round ${
-                              index + 1
-                            }`}
+                            aria-label={
+                              `Remove round ${index + 1
+                              }`
+                            }
                           >
-                            <Trash2 size={18} />
+                            <Trash2
+                              size={18}
+                            />
                           </button>
 
                         )}
@@ -898,81 +1317,115 @@ function AddMatchModal({
 
                       {/* Round Inputs */}
 
-                      <div className="grid gap-4 md:grid-cols-3">
+                      <div
+                        className="
+                          grid
+                          gap-4
+                          md:grid-cols-3
+                        "
+                      >
 
                         {/* Opponent */}
 
-                        <FormField label="Opponent">
+                        <FormField
+                          label="Opponent"
+                        >
 
                           <input
                             type="text"
                             value={
                               round.opponent
                             }
-                            onChange={(event) =>
+                            onChange={(
+                              event
+                            ) =>
                               updateRound(
                                 round.id,
                                 'opponent',
-                                event.target.value
+                                event.target
+                                  .value
                               )
                             }
                             placeholder="Opponent"
-                            className={inputClass}
+                            className={
+                              inputClass
+                            }
                           />
 
                         </FormField>
 
                         {/* Score */}
 
-                        <FormField label="Score">
+                        <FormField
+                          label="Score"
+                        >
 
                           <input
                             type="text"
                             value={
                               round.score
                             }
-                            onChange={(event) =>
+                            onChange={(
+                              event
+                            ) =>
                               updateRound(
                                 round.id,
                                 'score',
-                                event.target.value
+                                event.target
+                                  .value
                               )
                             }
                             placeholder="1-0"
-                            className={inputClass}
+                            className={
+                              inputClass
+                            }
                           />
 
                         </FormField>
 
                         {/* Opponent Deck */}
 
-                        <FormField label="Opponent Deck">
+                        <FormField
+                          label="Opponent Deck"
+                        >
 
                           <input
                             type="text"
                             value={
                               round.deckName
                             }
-                            onChange={(event) =>
+                            onChange={(
+                              event
+                            ) =>
                               updateRound(
                                 round.id,
                                 'deckName',
-                                event.target.value
+                                event.target
+                                  .value
                               )
                             }
                             placeholder="OYNu"
-                            className={inputClass}
+                            className={
+                              inputClass
+                            }
                           />
 
                         </FormField>
 
                       </div>
 
-                      {/* Opponent Deck Colours */}
+                      {/* Opponent Colours */}
 
                       <div className="mt-4">
 
-                        <p className="mb-2 text-sm font-semibold text-gray-700">
+                        <p
+                          className="
+                            mb-2
+                            text-sm
+                            font-semibold
+                            text-gray-700
+                          "
+                        >
                           Opponent Deck Colours
                         </p>
 
@@ -980,7 +1433,9 @@ function AddMatchModal({
                           selectedColors={
                             round.deckColors
                           }
-                          onToggle={(color) =>
+                          onToggle={(
+                            color
+                          ) =>
                             toggleRoundColor(
                               round.id,
                               color
@@ -997,11 +1452,15 @@ function AddMatchModal({
 
               </div>
 
-              {/* ===========================================
-                  ADD ROUND BUTTON - NOW AT BOTTOM
-              =========================================== */}
+              {/* Add Round */}
 
-              <div className="mt-4 flex justify-center">
+              <div
+                className="
+                  mt-4
+                  flex
+                  justify-center
+                "
+              >
 
                 <button
                   type="button"
@@ -1021,9 +1480,11 @@ function AddMatchModal({
                     hover:bg-purple-100
                   "
                 >
+
                   <Plus size={17} />
 
                   Add Round
+
                 </button>
 
               </div>
@@ -1041,6 +1502,7 @@ function AddMatchModal({
         <div
           className="
             flex
+            items-center
             justify-end
             gap-3
             border-t
@@ -1050,26 +1512,54 @@ function AddMatchModal({
           "
         >
 
+          {/* Error */}
+
+          {submitError && (
+
+            <p
+              className="
+                mr-auto
+                text-sm
+                font-medium
+                text-red-500
+              "
+            >
+              {submitError}
+            </p>
+
+          )}
+
+          {/* Cancel */}
+
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
+            disabled={isSubmitting}
             className="
               rounded-lg
-              border border-gray-300
+              border
+              border-gray-300
               px-5 py-2.5
               text-sm
               font-semibold
               text-gray-700
               transition
               hover:bg-gray-50
+              disabled:cursor-not-allowed
+              disabled:opacity-50
             "
           >
             Cancel
           </button>
 
+          {/* Submit */}
+
           <button
             type="submit"
-            disabled={!isFormValid}
+            disabled={
+              !isFormValid ||
+              isSubmitting
+            }
             className={`
               rounded-lg
               px-5 py-2.5
@@ -1077,25 +1567,38 @@ function AddMatchModal({
               font-semibold
               text-white
               transition
-              ${
-                isFormValid
-                  ? `
-                    bg-purple-600
-                    hover:bg-purple-700
-                  `
-                  : `
-                    cursor-not-allowed
-                    bg-purple-300
-                  `
+              ${isFormValid &&
+                !isSubmitting
+                ? `
+                      bg-purple-600
+                      hover:bg-purple-700
+                    `
+                : `
+                      cursor-not-allowed
+                      bg-purple-300
+                    `
               }
             `}
           >
-            Add Match
+
+            {isSubmitting
+              ? (
+                isEditing
+                  ? 'Saving...'
+                  : 'Adding...'
+              )
+              : (
+                isEditing
+                  ? 'Save Changes'
+                  : 'Add Match'
+              )}
+
           </button>
 
         </div>
 
       </form>
+
     </div>
   )
 }
@@ -1113,6 +1616,7 @@ function FormField({
   label,
   children,
 }: FormFieldProps) {
+
   return (
     <label className="block">
 
@@ -1140,6 +1644,7 @@ function FormField({
 
 interface ColorSelectorProps {
   selectedColors: DeckColor[]
+
   onToggle: (
     color: DeckColor
   ) => void
@@ -1149,8 +1654,15 @@ function ColorSelector({
   selectedColors,
   onToggle,
 }: ColorSelectorProps) {
+
   return (
-    <div className="flex flex-wrap gap-2">
+    <div
+      className="
+        flex
+        flex-wrap
+        gap-2
+      "
+    >
 
       {deckColorOptions.map(
         (color) => {
@@ -1161,11 +1673,14 @@ function ColorSelector({
             )
 
           return (
+
             <button
               key={color.value}
               type="button"
               onClick={() =>
-                onToggle(color.value)
+                onToggle(
+                  color.value
+                )
               }
               className={`
                 flex
@@ -1177,19 +1692,18 @@ function ColorSelector({
                 text-sm
                 font-medium
                 transition
-                ${
-                  selected
-                    ? `
-                      border-purple-400
-                      bg-purple-50
-                      text-purple-700
-                    `
-                    : `
-                      border-gray-200
-                      bg-white
-                      text-gray-600
-                      hover:border-gray-300
-                    `
+                ${selected
+                  ? `
+                        border-purple-400
+                        bg-purple-50
+                        text-purple-700
+                      `
+                  : `
+                        border-gray-200
+                        bg-white
+                        text-gray-600
+                        hover:border-gray-300
+                      `
                 }
               `}
             >
@@ -1205,6 +1719,7 @@ function ColorSelector({
               {color.label}
 
             </button>
+
           )
         }
       )}
@@ -1228,7 +1743,9 @@ function AchievementButton({
   onClick,
   children,
 }: AchievementButtonProps) {
+
   return (
+
     <button
       type="button"
       onClick={onClick}
@@ -1239,23 +1756,24 @@ function AchievementButton({
         text-sm
         font-semibold
         transition
-        ${
-          active
-            ? `
-              border-purple-400
-              bg-purple-50
-              text-purple-700
-            `
-            : `
-              border-gray-200
-              bg-white
-              text-gray-600
-              hover:border-purple-300
-            `
+        ${active
+          ? `
+                border-purple-400
+                bg-purple-50
+                text-purple-700
+              `
+          : `
+                border-gray-200
+                bg-white
+                text-gray-600
+                hover:border-purple-300
+              `
         }
       `}
     >
+
       {children}
+
     </button>
   )
 }
@@ -1266,7 +1784,9 @@ function AchievementButton({
 
 interface ImageUploadProps {
   label: string
+
   image: File | null
+
   preview: string | null
 
   onChange: (
@@ -1283,10 +1803,18 @@ function ImageUpload({
   onChange,
   onRemove,
 }: ImageUploadProps) {
+
   return (
     <div>
 
-      <p className="mb-2 text-sm font-semibold text-gray-700">
+      <p
+        className="
+          mb-2
+          text-sm
+          font-semibold
+          text-gray-700
+        "
+      >
         {label}
       </p>
 
@@ -1351,11 +1879,13 @@ function ImageUpload({
             onChange={(event) => {
 
               const file =
-                event.target.files?.[0]
+                event.target
+                  .files?.[0]
 
               if (file) {
                 onChange(file)
               }
+
             }}
           />
 
