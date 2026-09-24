@@ -15,6 +15,8 @@ import type {
   MatchEvent,
 } from '../types/match'
 
+import { API_URL } from '../config/api'
+
 /* =========================================================
    MATCHES PAGE
 ========================================================= */
@@ -47,9 +49,7 @@ function Matches() {
         setIsLoading(true)
         setError(null)
 
-        const response = await fetch(
-          'http://localhost:3000/api/matches'
-        )
+        const response = await fetch(`${API_URL}/api/matches`)
 
         if (!response.ok) {
           throw new Error('Failed to fetch matches')
